@@ -32,7 +32,9 @@ function createPopupIcon() {
     pointer-events: none;
   `;
   popupIcon.innerHTML = `
-    <img src="${chrome.runtime.getURL("icons/icon16.png")}" alt="Engify icon" style="width: 16px; height: 16px;"/>
+    <img src="${chrome.runtime.getURL(
+      "icons/icon16.png"
+    )}" alt="Engify icon" style="width: 16px; height: 16px;"/>
     <span>Fix me!</span>
   `;
   document.body.appendChild(popupIcon);
@@ -99,18 +101,21 @@ function showPopup(range) {
   popupIcon.style.visibility = "visible";
   popupIcon.style.display = "none";
 
-  const isDarkMode =
-    window.matchMedia &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
-  if (isDarkMode) {
-    popupIcon.style.backgroundColor = "#2d2d2d";
-    popupIcon.style.color = "#e8eaed";
-    popupIcon.style.border = "1px solid #404040";
-  } else {
-    popupIcon.style.backgroundColor = "white";
-    popupIcon.style.color = "#202124";
-    popupIcon.style.border = "1px solid #dadce0";
-  }
+  // const isDarkMode =
+  //   window.matchMedia &&
+  //   window.matchMedia("(prefers-color-scheme: dark)").matches;
+  // if (isDarkMode) {
+  //   popupIcon.style.backgroundColor = "#2d2d2d";
+  //   popupIcon.style.color = "#e8eaed";
+  //   popupIcon.style.border = "1px solid #404040";
+  // } else {
+  //   popupIcon.style.backgroundColor = "white";
+  //   popupIcon.style.color = "#202124";
+  //   popupIcon.style.border = "1px solid #dadce0";
+  // }
+  popupIcon.style.backgroundColor = "white";
+  popupIcon.style.color = "#202124";
+  popupIcon.style.border = "1px solid #dadce0";
 
   let topPosition;
   const spaceAbove = rect.top;
