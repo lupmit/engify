@@ -35,7 +35,7 @@ async function callGeminiAPI(text, tabId) {
   }
 
   const defaultSystemPrompt =
-    "Correct the following text for grammar and structure, and rephrase it using simple, easy-to-understand English. The original language of the text can be anything. Only return the corrected English text, without any additional explanations or introductory phrases.";
+    "Correct grammar, punctuation, and structure, and rewrite text in simple, clear English. Do not change tags like @abc or other special cases such as proper names, acronyms, or identifiers. Keep them exactly as they appear.";
   const finalSystemPrompt = defaultSystemPrompt;
 
   const fullPrompt = `${finalSystemPrompt}\n\n${text}`;

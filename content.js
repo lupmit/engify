@@ -91,6 +91,18 @@ function createPopupIcon() {
   });
 }
 
+function isColorDark(color) {
+  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!match) return false;
+
+  const r = parseInt(match[1]);
+  const g = parseInt(match[2]);
+  const b = parseInt(match[3]);
+
+  // https://stackoverflow.com/a/3943023
+  return r * 0.299 + g * 0.587 + b * 0.114 < 186;
+}
+
 function showPopup(range) {
   if (!popupIcon) createPopupIcon();
 
@@ -101,21 +113,18 @@ function showPopup(range) {
   popupIcon.style.visibility = "visible";
   popupIcon.style.display = "none";
 
-  // const isDarkMode =
-  //   window.matchMedia &&
-  //   window.matchMedia("(prefers-color-scheme: dark)").matches;
-  // if (isDarkMode) {
-  //   popupIcon.style.backgroundColor = "#2d2d2d";
-  //   popupIcon.style.color = "#e8eaed";
-  //   popupIcon.style.border = "1px solid #404040";
-  // } else {
-  //   popupIcon.style.backgroundColor = "white";
-  //   popupIcon.style.color = "#202124";
-  //   popupIcon.style.border = "1px solid #dadce0";
-  // }
-  popupIcon.style.backgroundColor = "white";
-  popupIcon.style.color = "#202124";
-  popupIcon.style.border = "1px solid #dadce0";
+  const computedStyle = window.getComputedStyle(lastValidSelection.element);
+  const backgroundColor = computedStyle.backgroundColor;
+
+  if (isColorDark(backgroundColor)) {
+    popupIcon.style.backgroundColor = "#2d2d2d";
+    popupIcon.style.color = "#e8eaed";
+    popupIcon.style.border = "1px solid #555";
+  } else {
+    popupIcon.style.backgroundColor = "white";
+    popupIcon.style.color = "#202124";
+    popupIcon.style.border = "1px solid #dadce0";
+  }
 
   let topPosition;
   const spaceAbove = rect.top;
