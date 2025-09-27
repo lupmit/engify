@@ -15,7 +15,7 @@ function createPopupIcon() {
     color: #202124; 
     border: 1px solid #dadce0; 
     border-radius: 10px; 
-    padding: 6px 12px;
+    padding: 4px 10px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -34,7 +34,7 @@ function createPopupIcon() {
   popupIcon.innerHTML = `
     <img src="${chrome.runtime.getURL(
       "icons/icon16.png"
-    )}" alt="Engify icon" style="width: 16px; height: 16px;"/>
+    )}" alt="Engify icon" style="width: 12px; height: 12px;"/>
     <span>Fix me!</span>
   `;
   document.body.appendChild(popupIcon);
