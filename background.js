@@ -34,8 +34,14 @@ async function callGeminiAPI(text, tabId) {
     apiKey = DEFAULT_KEY;
   }
 
-  const defaultSystemPrompt =
-    "Correct grammar, punctuation, and structure, and rewrite text in simple, clear English. Do not change tags like @abc or other special cases such as proper names, acronyms, or identifiers. Keep them exactly as they appear.";
+  const defaultSystemPrompt = `
+  SUMMARY
+    Correct grammar, punctuation, and structure, and rewrite the text in simple, clear English. 
+    Do not change tags like @abc or other special cases such as proper names, acronyms, or identifiers. Keep them exactly as they appear.
+  IMPORTANT NOTE
+  - Only return the answer, without asking further questions or giving any options.
+  - If the input has no meaning, return it exactly as it is.
+  `;
   const finalSystemPrompt = defaultSystemPrompt;
 
   const fullPrompt = `${finalSystemPrompt}\n\n${text}`;
