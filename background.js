@@ -1,3 +1,4 @@
+// Don't worry about it. it's free for everyone
 const DEFAULT_KEY = "AIzaSyCedhKl0Tbcg3qb1_WoQRDPFpH5K82BNVE";
 
 chrome.runtime.onInstalled.addListener(() => {
