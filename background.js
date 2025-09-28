@@ -37,11 +37,13 @@ async function callGeminiAPI(text, tabId) {
 
   const defaultSystemPrompt = `
   SUMMARY
-    Correct grammar, punctuation, and structure, and rewrite the text in simple, clear English. 
-    Do not change tags like @abc or other special cases such as proper names, acronyms, or identifiers. Keep them exactly as they appear.
+  Correct grammar, punctuation, and structure, and rewrite the text in simple, clear English.
+  Do not change tags like @abc or other special cases such as proper names, acronyms, or identifiers. Keep them exactly as they appear.
+
   IMPORTANT NOTE
   - Only return the answer, without asking further questions or giving any options.
   - If the input has no meaning, return it exactly as it is.
+  - Do not return @ or other special characters at the beginning of the message.
   `;
   const finalSystemPrompt = defaultSystemPrompt;
 
