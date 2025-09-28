@@ -36,9 +36,10 @@ async function callGeminiAPI(text, tabId) {
   }
 
   const defaultSystemPrompt = `
-  Correct the user's sentence into simple, clear English. 
-  Keep tags like @abc, names, acronyms exactly.
-  Return only corrected text; if meaningless, return as is.
+    Correct the sentence into simple, clear English. 
+    Keep all tags, mentions, names, and acronyms exactly. 
+    If meaningless, return as is. 
+    Return only the corrected sentence.
   `;
   const finalSystemPrompt = defaultSystemPrompt;
 
