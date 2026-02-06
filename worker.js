@@ -1,8 +1,17 @@
-const API_KEYS = [];
+const GOOGLE_API_KEYS = [];
+const GROQ_API_KEYS = [];
 
-const MODELS = [
-  { name: "gemma-3-27b-it", label: "Gemma 3 27B" },
-  { name: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+const PROVIDERS = [
+  {
+    provider: "groq",
+    model: "llama-3.3-70b-versatile",
+    label: "Groq Llama 3.3 70B",
+  },
+  {
+    provider: "google",
+    model: "gemini-2.5-flash-lite",
+    label: "Gemini 2.5 Flash Lite",
+  },
 ];
 
 const MAX_TEXT_LENGTH = 5000;
@@ -30,9 +39,52 @@ CRITICAL RULES:
 
 OUTPUT: Only the final English text. No explanations or notes.`;
 
-function getNextApiKey() {
-  const index = Date.now() % API_KEYS.length;
-  return API_KEYS[index];
+function getNextKey(keys) {
+  const index = Date.now() % keys.length;
+  return keys[index];
+}
+
+async function callGoogle(model, apiKey, prompt) {
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+    }),
+  });
+  return {
+    response,
+    extractText: (data) =>
+      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim(),
+    extractBlock: (data) => data.promptFeedback?.blockReason,
+  };
+}
+
+async function callGroq(model, apiKey, prompt) {
+  const response = await fetch(
+    "https://api.groq.com/openai/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+      }),
+    },
+  );
+  return {
+    response,
+    extractText: (data) => data.choices?.[0]?.message?.content?.trim(),
+    extractBlock: () => null,
+  };
 }
 
 function isAllowedOrigin(origin) {
@@ -105,72 +157,68 @@ async function handleRequest(request) {
       );
     }
 
-    const fullPrompt = `${SYSTEM_PROMPT}\n\n---TEXT TO PROCESS---\n${text}\n---END---`;
-    const apiKey = getNextApiKey();
+    const userPrompt = `---TEXT TO PROCESS---\n${text}\n---END---`;
+    const googlePrompt = `${SYSTEM_PROMPT}\n\n${userPrompt}`;
     let lastError = null;
 
-    for (const model of MODELS) {
-      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model.name}:generateContent?key=${apiKey}`;
+    for (const { provider, model, label } of PROVIDERS) {
+      try {
+        let result;
+        if (provider === "google") {
+          const apiKey = getNextKey(GOOGLE_API_KEYS);
+          result = await callGoogle(model, apiKey, googlePrompt);
+        } else if (provider === "groq") {
+          const apiKey = getNextKey(GROQ_API_KEYS);
+          result = await callGroq(model, apiKey, userPrompt);
+        }
 
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: fullPrompt }] }],
-        }),
-      });
+        const { response, extractText, extractBlock } = result;
 
-      if (response.status === 429) {
-        lastError = `${model.label} rate limited`;
+        if (response.status === 429) {
+          lastError = `${label} rate limited`;
+          continue;
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const errorMessage =
+            errorData.error?.message ||
+            `HTTP error! status: ${response.status}`;
+          lastError = `${label}: ${errorMessage}`;
+          continue;
+        }
+
+        const data = await response.json();
+        const enhancedText = extractText(data);
+
+        if (enhancedText) {
+          return new Response(JSON.stringify({ success: true, enhancedText }), {
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders(origin),
+            },
+          });
+        }
+
+        const blockReason = extractBlock(data);
+        if (blockReason) {
+          return new Response(
+            JSON.stringify({ error: `Request blocked: ${blockReason}` }),
+            {
+              status: 400,
+              headers: {
+                "Content-Type": "application/json",
+                ...corsHeaders(origin),
+              },
+            },
+          );
+        }
+
+        lastError = `${label}: Unexpected response format`;
+      } catch (e) {
+        lastError = `${label}: ${e.message}`;
         continue;
       }
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage =
-          errorData.error?.message || `HTTP error! status: ${response.status}`;
-        return new Response(JSON.stringify({ error: errorMessage }), {
-          status: response.status,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders(origin),
-          },
-        });
-      }
-
-      const data = await response.json();
-
-      if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            enhancedText: data.candidates[0].content.parts[0].text.trim(),
-          }),
-          {
-            headers: {
-              "Content-Type": "application/json",
-              ...corsHeaders(origin),
-            },
-          },
-        );
-      }
-
-      const blockReason = data.promptFeedback?.blockReason;
-      if (blockReason) {
-        return new Response(
-          JSON.stringify({ error: `Request blocked: ${blockReason}` }),
-          {
-            status: 400,
-            headers: {
-              "Content-Type": "application/json",
-              ...corsHeaders(origin),
-            },
-          },
-        );
-      }
-
-      lastError = `${model.label}: Unexpected response format`;
-      continue;
     }
 
     return new Response(
