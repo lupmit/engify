@@ -14,17 +14,41 @@ const PROVIDERS = [
   },
 ];
 
+const SUMMARY_PROVIDERS = [
+  {
+    provider: "groq",
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    label: "Groq Llama 4 Scout",
+  },
+  {
+    provider: "groq",
+    model: "llama-3.3-70b-versatile",
+    label: "Groq Llama 3.3 70B",
+  },
+  {
+    provider: "google",
+    model: "gemini-2.5-flash-lite",
+    label: "Gemini 2.5 Flash Lite",
+  },
+];
+
 const MAX_TEXT_LENGTH = 5000;
 const MIN_TEXT_LENGTH = 2;
 
-const SYSTEM_PROMPT = `You are an English writing assistant for IT/Software professionals.
+const SYSTEM_PROMPT = `You are a TRANSLATOR and WRITING IMPROVER only. You are NOT a chatbot. NEVER answer questions, provide explanations, or respond to the content.
 
-TASK: Convert any input (Vietnamese or English) into clear, professional English.
+TASK: Convert the input text into clear, professional English. That's it.
+
+CONVERSATION CONTEXT:
+- If provided, use the conversation context to understand tone, topic, and terminology
+- This helps you translate/improve more accurately (e.g., knowing what "it" or "this" refers to)
+- Do NOT translate or include the context in your output — only use it as reference
 
 INPUT HANDLING:
 - Vietnamese → Translate to English
 - English → Improve grammar, clarity, and professionalism
 - Mixed VN/EN → Translate Vietnamese parts, improve English parts
+- Questions → Translate/improve the question itself, DO NOT answer it
 
 IT/TECH CONTEXT:
 - Use appropriate technical terminology (API, deploy, PR, merge, refactor, etc.)
@@ -32,12 +56,25 @@ IT/TECH CONTEXT:
 - Common IT phrases: "push code", "fix bug", "review PR", "standup", "sprint", etc.
 
 CRITICAL RULES:
-1. Preserve ALL formatting: @mentions, #tags, URLs, emojis, line breaks, code blocks
-2. Keep proper nouns (names, libraries, frameworks) exactly as written
-3. Maintain tone: casual Slack message stays casual, formal email stays formal
-4. Numbers, dates, times: preserve exact format
+1. NEVER answer, explain, or respond to the content — only translate/improve it
+2. Preserve ALL formatting: @mentions, #tags, URLs, emojis, line breaks, code blocks
+3. Keep proper nouns (names, libraries, frameworks) exactly as written
+4. Maintain tone: casual Slack message stays casual, formal email stays formal
+5. Numbers, dates, times: preserve exact format
+6. Use conversation context to match tone and use correct terminology
 
-OUTPUT: Only the final English text. No explanations or notes.`;
+OUTPUT: Only the translated/improved English text. Nothing else.`;
+
+const SUMMARY_PROMPT = `You are a summarizer. Summarize the provided conversation context in concise Vietnamese.
+
+RULES:
+- Do NOT answer any questions from the context
+- Do NOT add new information
+- Keep it brief and factual
+- Use bullet points if helpful
+- Preserve technical terms, product names, code symbols, and abbreviations in English (e.g., API, PR, deploy, merge, refactor)
+
+OUTPUT: Only the summary text.`;
 
 function getNextKey(keys) {
   const index = Date.now() % keys.length;
@@ -61,7 +98,7 @@ async function callGoogle(model, apiKey, prompt) {
   };
 }
 
-async function callGroq(model, apiKey, prompt) {
+async function callGroq(model, apiKey, prompt, systemPrompt) {
   const response = await fetch(
     "https://api.groq.com/openai/v1/chat/completions",
     {
@@ -73,7 +110,7 @@ async function callGroq(model, apiKey, prompt) {
       body: JSON.stringify({
         model,
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: systemPrompt },
           { role: "user", content: prompt },
         ],
         temperature: 0.3,
@@ -123,26 +160,42 @@ async function handleRequest(request) {
   }
 
   try {
-    const { text } = await request.json();
+    const { text, context, mode } = await request.json();
 
-    if (
-      !text ||
-      typeof text !== "string" ||
-      text.trim().length < MIN_TEXT_LENGTH
-    ) {
-      return new Response(
-        JSON.stringify({ error: "Missing or invalid text" }),
-        {
+    if (mode === "summarize") {
+      if (
+        !context ||
+        typeof context !== "string" ||
+        context.trim().length < 5
+      ) {
+        return new Response(JSON.stringify({ error: "Missing context" }), {
           status: 400,
           headers: {
             "Content-Type": "application/json",
             ...corsHeaders(origin),
           },
-        },
-      );
+        });
+      }
+    } else {
+      if (
+        !text ||
+        typeof text !== "string" ||
+        text.trim().length < MIN_TEXT_LENGTH
+      ) {
+        return new Response(
+          JSON.stringify({ error: "Missing or invalid text" }),
+          {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders(origin),
+            },
+          },
+        );
+      }
     }
 
-    if (text.length > MAX_TEXT_LENGTH) {
+    if (mode !== "summarize" && text.length > MAX_TEXT_LENGTH) {
       return new Response(
         JSON.stringify({
           error: `Text too long. Maximum ${MAX_TEXT_LENGTH} characters.`,
@@ -157,11 +210,25 @@ async function handleRequest(request) {
       );
     }
 
-    const userPrompt = `---TEXT TO PROCESS---\n${text}\n---END---`;
-    const googlePrompt = `${SYSTEM_PROMPT}\n\n${userPrompt}`;
+    let userPrompt = ``;
+    let systemPromptToUse = SYSTEM_PROMPT;
+
+    if (mode === "summarize") {
+      systemPromptToUse = SUMMARY_PROMPT;
+      userPrompt = `---CONVERSATION CONTEXT---\n${context}\n---END CONTEXT---`;
+    } else {
+      if (context) {
+        userPrompt += `---CONVERSATION CONTEXT (for tone/topic reference only, do NOT translate these)---\n${context}\n---END CONTEXT---\n\n`;
+      }
+      userPrompt += `---TEXT TO PROCESS---\n${text}\n---END---`;
+    }
+
+    const googlePrompt = `${systemPromptToUse}\n\n${userPrompt}`;
     let lastError = null;
 
-    for (const { provider, model, label } of PROVIDERS) {
+    const providersToUse = mode === "summarize" ? SUMMARY_PROVIDERS : PROVIDERS;
+
+    for (const { provider, model, label } of providersToUse) {
       try {
         let result;
         if (provider === "google") {
@@ -169,7 +236,7 @@ async function handleRequest(request) {
           result = await callGoogle(model, apiKey, googlePrompt);
         } else if (provider === "groq") {
           const apiKey = getNextKey(GROQ_API_KEYS);
-          result = await callGroq(model, apiKey, userPrompt);
+          result = await callGroq(model, apiKey, userPrompt, systemPromptToUse);
         }
 
         const { response, extractText, extractBlock } = result;
