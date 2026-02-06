@@ -2,7 +2,7 @@
 
 const WORKER_URL = "https://engify.lupmit.workers.dev";
 
-const MAX_RETRY_ATTEMPTS = 5;
+const MAX_RETRY_ATTEMPTS = 2;
 const INITIAL_RETRY_DELAY_MS = 1000;
 
 function shouldRetry(status, errorMessage) {
