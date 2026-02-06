@@ -4,8 +4,8 @@ const SELECTION_CHECK_DELAY_MS = 50;
 const ERROR_DISPLAY_DURATION_MS = 3000;
 const POPUP_ANIMATION_DURATION_MS = 100;
 const EXCLUDED_INPUT_TYPES = ["email", "password", "number"];
-const MAX_CONTEXT_MESSAGES = 10;
-const MAX_CONTEXT_LENGTH = 2000;
+const MAX_CONTEXT_MESSAGES = 20;
+const MAX_CONTEXT_LENGTH = 4000;
 
 // Command definitions - add new commands here
 const COMMANDS = [
@@ -69,6 +69,19 @@ function getThreadContext(element) {
     const seen = new Set();
     const texts = [];
 
+    // Check if this looks like a thread boundary
+    const isThreadContainer =
+      container.hasAttribute("data-thread-id") ||
+      container.hasAttribute("data-conversation-id") ||
+      /thread|conversation|discussion/i.test(container.className || "") ||
+      /thread|conversation|discussion/i.test(
+        container.getAttribute("data-qa") || "",
+      ) ||
+      (container.getAttribute("role") === "article" &&
+        /thread|conversation|message/i.test(
+          container.getAttribute("aria-label") || "",
+        ));
+
     const candidates = container.querySelectorAll(
       "[role='listitem'], [role='article'], [role='comment'], " +
         "[data-qa*='message'], [data-testid*='message'], [data-testid*='comment'], " +
@@ -124,7 +137,11 @@ function getThreadContext(element) {
 
     if (texts.length >= 2) {
       bestMessages = texts.slice(-MAX_CONTEXT_MESSAGES);
-      if (bestMessages.length >= MAX_CONTEXT_MESSAGES) break;
+      // If we found messages and this is a thread container, stop here
+      if (isThreadContainer || bestMessages.length >= MAX_CONTEXT_MESSAGES) {
+        console.log(`[Engify] Thread boundary detected at depth ${depth}`);
+        break;
+      }
     }
 
     container = container.parentElement;
