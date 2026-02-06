@@ -167,6 +167,142 @@ function getThreadContext(element) {
   return null;
 }
 
+function createSummaryModal(summaryText) {
+  const modal = document.createElement("div");
+  modal.id = "engify-summary-modal";
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2147483647;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  `;
+
+  const modalContent = document.createElement("div");
+  modalContent.style.cssText = `
+    background-color: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 600px;
+    max-height: 80vh;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  `;
+
+  const header = document.createElement("div");
+  header.style.cssText = `
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 12px;
+  `;
+
+  const title = document.createElement("h3");
+  title.textContent = "Summary";
+  title.style.cssText = `
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #202124;
+  `;
+
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "×";
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: #5f6368;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+  `;
+  closeBtn.onmouseover = () => (closeBtn.style.backgroundColor = "#f1f3f4");
+  closeBtn.onmouseout = () => (closeBtn.style.backgroundColor = "transparent");
+  closeBtn.onclick = () => modal.remove();
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+
+  const textArea = document.createElement("div");
+  textArea.textContent = summaryText;
+  textArea.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #202124;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  `;
+
+  const footer = document.createElement("div");
+  footer.style.cssText = `
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding-top: 12px;
+    border-top: 1px solid #e0e0e0;
+  `;
+
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "Copy";
+  copyBtn.style.cssText = `
+    background-color: #1a73e8;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  `;
+  copyBtn.onmouseover = () => (copyBtn.style.backgroundColor = "#1765cc");
+  copyBtn.onmouseout = () => (copyBtn.style.backgroundColor = "#1a73e8");
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(summaryText).then(() => {
+      copyBtn.textContent = "✓ Copied";
+      copyBtn.style.backgroundColor = "#34a853";
+      setTimeout(() => {
+        copyBtn.textContent = "Copy";
+        copyBtn.style.backgroundColor = "#1a73e8";
+      }, 2000);
+    });
+  };
+
+  footer.appendChild(copyBtn);
+
+  modalContent.appendChild(header);
+  modalContent.appendChild(textArea);
+  modalContent.appendChild(footer);
+  modal.appendChild(modalContent);
+
+  modal.onclick = (e) => {
+    if (e.target === modal) modal.remove();
+  };
+
+  document.body.appendChild(modal);
+}
+
 function createPopupIcon() {
   if (popupIcon) {
     return popupIcon;
@@ -439,8 +575,14 @@ async function performTextEnhancement() {
     }
 
     if (response.success) {
-      replaceSelectedText(response.enhancedText);
-      hidePopup();
+      if (command.mode === "summarize") {
+        // For summary, show in modal
+        createSummaryModal(response.enhancedText);
+        hidePopup();
+      } else {
+        replaceSelectedText(response.enhancedText);
+        hidePopup();
+      }
     } else {
       updatePopupStatus("Failed. Try again.", false);
       console.log("API Error:", response.error || "Unknown error");
