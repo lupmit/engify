@@ -168,6 +168,10 @@ function getThreadContext(element) {
 }
 
 function createSummaryModal(summaryText) {
+  // Detect if page is in dark mode
+  const bgColor = window.getComputedStyle(document.body).backgroundColor;
+  const isDarkMode = isColorDark(bgColor);
+
   const modal = document.createElement("div");
   modal.id = "engify-summary-modal";
   modal.style.cssText = `
@@ -176,7 +180,7 @@ function createSummaryModal(summaryText) {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: ${isDarkMode ? "rgba(0, 0, 0, 0.55)" : "rgba(0, 0, 0, 0.25)"};
     display: flex;
     align-items: center;
     justify-content: center;
@@ -186,16 +190,17 @@ function createSummaryModal(summaryText) {
 
   const modalContent = document.createElement("div");
   modalContent.style.cssText = `
-    background-color: white;
-    border-radius: 12px;
-    padding: 24px;
-    max-width: 600px;
-    max-height: 80vh;
-    width: 90%;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    background-color: ${isDarkMode ? "#1f1f1f" : "#ffffff"};
+    border-radius: 10px;
+    padding: 20px 20px 18px;
+    max-width: 640px;
+    max-height: 70vh;
+    width: 92%;
+    box-shadow: ${isDarkMode ? "0 12px 32px rgba(0, 0, 0, 0.5)" : "0 12px 32px rgba(0, 0, 0, 0.12)"};
+    border: 1px solid ${isDarkMode ? "rgba(255,255,255,0.08)" : "#e6e6e6"};
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
   `;
 
   const header = document.createElement("div");
@@ -203,37 +208,46 @@ function createSummaryModal(summaryText) {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #e0e0e0;
-    padding-bottom: 12px;
+    gap: 8px;
   `;
 
   const title = document.createElement("h3");
   title.textContent = "Summary";
   title.style.cssText = `
     margin: 0;
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
-    color: #202124;
+    color: ${isDarkMode ? "#e8eaed" : "#202124"};
+    letter-spacing: 0;
   `;
 
   const closeBtn = document.createElement("button");
-  closeBtn.textContent = "×";
+  closeBtn.textContent = "✕";
   closeBtn.style.cssText = `
     background: none;
     border: none;
-    font-size: 28px;
-    color: #5f6368;
+    font-size: 18px;
+    color: ${isDarkMode ? "#9aa0a6" : "#5f6368"};
     cursor: pointer;
-    padding: 0;
-    width: 32px;
-    height: 32px;
+    padding: 2px;
+    width: 28px;
+    height: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
+    border-radius: 6px;
+    transition: background-color 0.15s ease;
+    flex-shrink: 0;
   `;
-  closeBtn.onmouseover = () => (closeBtn.style.backgroundColor = "#f1f3f4");
-  closeBtn.onmouseout = () => (closeBtn.style.backgroundColor = "transparent");
+  closeBtn.onmouseover = () => {
+    closeBtn.style.backgroundColor = isDarkMode
+      ? "rgba(255,255,255,0.06)"
+      : "rgba(0,0,0,0.05)";
+  };
+  closeBtn.onmouseout = () => {
+    closeBtn.style.backgroundColor = "transparent";
+    closeBtn.style.color = isDarkMode ? "#9aa0a6" : "#5f6368";
+  };
   closeBtn.onclick = () => modal.remove();
 
   header.appendChild(title);
@@ -244,56 +258,25 @@ function createSummaryModal(summaryText) {
   textArea.style.cssText = `
     flex: 1;
     overflow-y: auto;
-    padding: 12px;
-    background-color: #f8f9fa;
-    border-radius: 8px;
+    padding: 12px 10px;
+    background-color: transparent;
+    border-radius: 6px;
     font-size: 14px;
     line-height: 1.6;
-    color: #202124;
+    color: ${isDarkMode ? "#e8eaed" : "#202124"};
     white-space: pre-wrap;
     word-wrap: break-word;
-  `;
-
-  const footer = document.createElement("div");
-  footer.style.cssText = `
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    padding-top: 12px;
-    border-top: 1px solid #e0e0e0;
-  `;
-
-  const copyBtn = document.createElement("button");
-  copyBtn.textContent = "Copy";
-  copyBtn.style.cssText = `
-    background-color: #1a73e8;
-    color: white;
     border: none;
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background-color 0.2s;
   `;
-  copyBtn.onmouseover = () => (copyBtn.style.backgroundColor = "#1765cc");
-  copyBtn.onmouseout = () => (copyBtn.style.backgroundColor = "#1a73e8");
-  copyBtn.onclick = () => {
-    navigator.clipboard.writeText(summaryText).then(() => {
-      copyBtn.textContent = "✓ Copied";
-      copyBtn.style.backgroundColor = "#34a853";
-      setTimeout(() => {
-        copyBtn.textContent = "Copy";
-        copyBtn.style.backgroundColor = "#1a73e8";
-      }, 2000);
-    });
-  };
 
-  footer.appendChild(copyBtn);
+  // Smooth scrollbar styling
+  textArea.style.scrollBehavior = "smooth";
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
 
   modalContent.appendChild(header);
   modalContent.appendChild(textArea);
-  modalContent.appendChild(footer);
   modal.appendChild(modalContent);
 
   modal.onclick = (e) => {
@@ -576,8 +559,9 @@ async function performTextEnhancement() {
 
     if (response.success) {
       if (command.mode === "summarize") {
-        // For summary, show in modal
+        // For summary, show in modal and clear the /sum text
         createSummaryModal(response.enhancedText);
+        replaceSelectedText("");
         hidePopup();
       } else {
         replaceSelectedText(response.enhancedText);
