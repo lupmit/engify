@@ -60,111 +60,120 @@ function detectCommand(text) {
 }
 
 function getThreadContext(element) {
-  let container = element?.parentElement;
-  const maxDepth = 15;
-  let bestMessages = null;
-  const inputRect = element?.getBoundingClientRect();
+  try {
+    let container = element?.parentElement;
+    const maxDepth = 15;
+    let bestMessages = null;
+    const inputRect = element?.getBoundingClientRect();
 
-  for (let depth = 0; container && depth < maxDepth; depth++) {
-    const seen = new Set();
-    const texts = [];
+    for (let depth = 0; container && depth < maxDepth; depth++) {
+      const seen = new Set();
+      const texts = [];
 
-    // Check if this looks like a thread boundary
-    const isThreadContainer =
-      container.hasAttribute("data-thread-id") ||
-      container.hasAttribute("data-conversation-id") ||
-      /thread|conversation|discussion/i.test(container.className || "") ||
-      /thread|conversation|discussion/i.test(
-        container.getAttribute("data-qa") || "",
-      ) ||
-      (container.getAttribute("role") === "article" &&
-        /thread|conversation|message/i.test(
-          container.getAttribute("aria-label") || "",
-        ));
+      // Check if this looks like a thread boundary
+      const isThreadContainer =
+        container.hasAttribute("data-thread-id") ||
+        container.hasAttribute("data-conversation-id") ||
+        /thread|conversation|discussion/i.test(container.className || "") ||
+        /thread|conversation|discussion/i.test(
+          container.getAttribute("data-qa") || "",
+        ) ||
+        (container.getAttribute("role") === "article" &&
+          /thread|conversation|message/i.test(
+            container.getAttribute("aria-label") || "",
+          ));
 
-    const candidates = container.querySelectorAll(
-      "[role='listitem'], [role='article'], [role='comment'], " +
-        "[data-qa*='message'], [data-testid*='message'], [data-testid*='comment'], " +
-        "[data-testid*='note'], [aria-label*='message'], [aria-label*='comment']",
-    );
+      const candidates = container.querySelectorAll(
+        "[role='listitem'], [role='article'], [role='comment'], " +
+          "[data-qa*='message'], [data-testid*='message'], [data-testid*='comment'], " +
+          "[data-testid*='note'], [aria-label*='message'], [aria-label*='comment']",
+      );
 
-    if (candidates.length >= 2) {
-      candidates.forEach((el) => {
-        if (element && el.contains(element)) return;
-        const elRect = el.getBoundingClientRect();
-        if (inputRect && elRect.bottom > inputRect.top) return;
-        const text = el.innerText?.trim();
-        if (text && text.length > 3 && text.length < 2000 && !seen.has(text)) {
-          seen.add(text);
-          texts.push(text);
-        }
-      });
-    }
-
-    if (texts.length < 2) {
-      const children = Array.from(container.children);
-      if (children.length >= 3) {
-        const tagCounts = {};
-        children.forEach((c) => {
-          const key =
-            c.tagName + (c.className ? "." + c.className.split(" ")[0] : "");
-          tagCounts[key] = (tagCounts[key] || 0) + 1;
+      if (candidates.length >= 2) {
+        candidates.forEach((el) => {
+          if (element && el.contains(element)) return;
+          const elRect = el.getBoundingClientRect();
+          if (inputRect && elRect.bottom > inputRect.top) return;
+          const text = el.innerText?.trim();
+          if (
+            text &&
+            text.length > 3 &&
+            text.length < 2000 &&
+            !seen.has(text)
+          ) {
+            seen.add(text);
+            texts.push(text);
+          }
         });
+      }
 
-        const dominantTag = Object.entries(tagCounts).sort(
-          (a, b) => b[1] - a[1],
-        )[0];
-
-        if (dominantTag && dominantTag[1] >= 3) {
-          children.forEach((child) => {
-            if (element && child.contains(element)) return;
-            const childRect = child.getBoundingClientRect();
-            if (inputRect && childRect.bottom > inputRect.top) return;
-            const text = child.innerText?.trim();
-            if (
-              text &&
-              text.length > 3 &&
-              text.length < 2000 &&
-              !seen.has(text)
-            ) {
-              seen.add(text);
-              texts.push(text);
-            }
+      if (texts.length < 2) {
+        const children = Array.from(container.children);
+        if (children.length >= 3) {
+          const tagCounts = {};
+          children.forEach((c) => {
+            const key =
+              c.tagName + (c.className ? "." + c.className.split(" ")[0] : "");
+            tagCounts[key] = (tagCounts[key] || 0) + 1;
           });
+
+          const dominantTag = Object.entries(tagCounts).sort(
+            (a, b) => b[1] - a[1],
+          )[0];
+
+          if (dominantTag && dominantTag[1] >= 3) {
+            children.forEach((child) => {
+              if (element && child.contains(element)) return;
+              const childRect = child.getBoundingClientRect();
+              if (inputRect && childRect.bottom > inputRect.top) return;
+              const text = child.innerText?.trim();
+              if (
+                text &&
+                text.length > 3 &&
+                text.length < 2000 &&
+                !seen.has(text)
+              ) {
+                seen.add(text);
+                texts.push(text);
+              }
+            });
+          }
         }
       }
-    }
 
-    if (texts.length >= 2) {
-      bestMessages = texts.slice(-MAX_CONTEXT_MESSAGES);
-      // If we found messages and this is a thread container, stop here
-      if (isThreadContainer || bestMessages.length >= MAX_CONTEXT_MESSAGES) {
-        console.log(`[Engify] Thread boundary detected at depth ${depth}`);
-        break;
+      if (texts.length >= 2) {
+        bestMessages = texts.slice(-MAX_CONTEXT_MESSAGES);
+        // If we found messages and this is a thread container, stop here
+        if (isThreadContainer || bestMessages.length >= MAX_CONTEXT_MESSAGES) {
+          console.log(`[Engify] Thread boundary detected at depth ${depth}`);
+          break;
+        }
       }
+
+      container = container.parentElement;
     }
 
-    container = container.parentElement;
-  }
+    if (bestMessages && bestMessages.length >= 2) {
+      console.log(`[Engify] Context found: ${bestMessages.length} messages`);
+      bestMessages.forEach((msg, i) =>
+        console.log(
+          `[Engify] [${i + 1}] ${msg.slice(0, 100)}${msg.length > 100 ? "..." : ""}`,
+        ),
+      );
 
-  if (bestMessages && bestMessages.length >= 2) {
-    console.log(`[Engify] Context found: ${bestMessages.length} messages`);
-    bestMessages.forEach((msg, i) =>
-      console.log(
-        `[Engify] [${i + 1}] ${msg.slice(0, 100)}${msg.length > 100 ? "..." : ""}`,
-      ),
-    );
-
-    let context = bestMessages.join("\n---\n");
-    if (context.length > MAX_CONTEXT_LENGTH) {
-      context = context.slice(-MAX_CONTEXT_LENGTH);
-      console.log(`[Engify] Context truncated to ${MAX_CONTEXT_LENGTH} chars`);
+      let context = bestMessages.join("\n---\n");
+      if (context.length > MAX_CONTEXT_LENGTH) {
+        context = context.slice(-MAX_CONTEXT_LENGTH);
+        console.log(
+          `[Engify] Context truncated to ${MAX_CONTEXT_LENGTH} chars`,
+        );
+      }
+      return context;
     }
-    return context;
+  } finally {
+    console.log("[Engify] No thread context found");
+    return null;
   }
-
-  console.log("[Engify] No thread context found");
-  return null;
 }
 
 function createSummaryModal(summaryText) {
