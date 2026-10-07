@@ -111,11 +111,12 @@ function createPopupIcon() {
       box-sizing: border-box;
       position: relative;
       display: inline-block;
-      height: 20px;
+      height: 16px;
       border-radius: 9999px;
       appearance: none;
       font: inherit;
       font-size: 12px;
+      line-height: 16px;
       font-weight: 600;
       text-align: left;
       cursor: auto;
@@ -134,7 +135,7 @@ function createPopupIcon() {
       align-items: center;
       justify-content: center;
       gap: 8px;
-      padding: 2px 10px;
+      padding: 0 10px;
       white-space: nowrap;
       transition: transform 200ms, opacity 200ms;
     }
