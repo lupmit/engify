@@ -26,16 +26,17 @@ function sendStatusUpdate(tabId, status) {
     .catch((e) => console.log("Error sending retry status message:", e));
 }
 
-async function callGeminiAPI(text, tabId, context, mode) {
+async function callGeminiAPI(text, tabId) {
   let lastError;
   let delay = INITIAL_RETRY_DELAY_MS;
+  const { systemPrompt } = await chrome.storage.local.get("systemPrompt");
+  const body = { text };
+  if (typeof systemPrompt === "string" && systemPrompt.trim()) {
+    body.systemPrompt = systemPrompt;
+  }
 
   for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
     try {
-      const body = { text };
-      if (context) body.context = context;
-      if (mode) body.mode = mode;
-
       const response = await fetch(WORKER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -120,12 +121,7 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "callGeminiAPI") {
-    callGeminiAPI(
-      request.textToEnhance,
-      sender.tab?.id,
-      request.threadContext,
-      request.mode,
-    )
+    callGeminiAPI(request.textToEnhance, sender.tab?.id)
       .then((enhancedText) => sendResponse({ success: true, enhancedText }))
       .catch((error) => sendResponse({ success: false, error: error.message }));
     return true;

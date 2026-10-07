@@ -4,296 +4,11 @@ const SELECTION_CHECK_DELAY_MS = 50;
 const ERROR_DISPLAY_DURATION_MS = 3000;
 const POPUP_ANIMATION_DURATION_MS = 100;
 const EXCLUDED_INPUT_TYPES = ["email", "password", "number"];
-const MAX_CONTEXT_MESSAGES = 20;
-const MAX_CONTEXT_LENGTH = 4000;
-
-// Command definitions - add new commands here
-const COMMANDS = [
-  {
-    prefix: "/sum",
-    mode: "summarize",
-    label: "Summary",
-    processingLabel: "Summarizing",
-    requiresContext: true,
-  },
-  // Add more commands here in the future
-  // Example:
-  // {
-  //   prefix: "/translate",
-  //   mode: "translate",
-  //   label: "Translate",
-  //   processingLabel: "Translating",
-  //   requiresContext: false,
-  // },
-];
-
-// Default command (no prefix)
-const DEFAULT_COMMAND = {
-  prefix: null,
-  mode: "enhance",
-  label: "Fix me!",
-  processingLabel: "Fixing",
-  requiresContext: false,
-};
 
 let popupIcon = null;
 let lastValidSelection = null;
 let isApiCallInProgress = false;
 let selectionCheckTimeout = null;
-
-function detectCommand(text) {
-  if (!text || typeof text !== "string") {
-    return DEFAULT_COMMAND;
-  }
-
-  const trimmedText = text.trim();
-
-  // Check each command prefix
-  for (const command of COMMANDS) {
-    if (trimmedText.startsWith(command.prefix)) {
-      return command;
-    }
-  }
-
-  // Return default if no command prefix found
-  return DEFAULT_COMMAND;
-}
-
-function getThreadContext(element) {
-  try {
-    let container = element?.parentElement;
-    const maxDepth = 15;
-    let bestMessages = null;
-    const inputRect = element?.getBoundingClientRect();
-
-    for (let depth = 0; container && depth < maxDepth; depth++) {
-      const seen = new Set();
-      const texts = [];
-
-      // Check if this looks like a thread boundary
-      const isThreadContainer =
-        container.hasAttribute("data-thread-id") ||
-        container.hasAttribute("data-conversation-id") ||
-        /thread|conversation|discussion/i.test(container.className || "") ||
-        /thread|conversation|discussion/i.test(
-          container.getAttribute("data-qa") || "",
-        ) ||
-        (container.getAttribute("role") === "article" &&
-          /thread|conversation|message/i.test(
-            container.getAttribute("aria-label") || "",
-          ));
-
-      const candidates = container.querySelectorAll(
-        "[role='listitem'], [role='article'], [role='comment'], " +
-          "[data-qa*='message'], [data-testid*='message'], [data-testid*='comment'], " +
-          "[data-testid*='note'], [aria-label*='message'], [aria-label*='comment']",
-      );
-
-      if (candidates.length >= 2) {
-        candidates.forEach((el) => {
-          if (element && el.contains(element)) return;
-          const elRect = el.getBoundingClientRect();
-          if (inputRect && elRect.bottom > inputRect.top) return;
-          const text = el.innerText?.trim();
-          if (
-            text &&
-            text.length > 3 &&
-            text.length < 2000 &&
-            !seen.has(text)
-          ) {
-            seen.add(text);
-            texts.push(text);
-          }
-        });
-      }
-
-      if (texts.length < 2) {
-        const children = Array.from(container.children);
-        if (children.length >= 3) {
-          const tagCounts = {};
-          children.forEach((c) => {
-            const key =
-              c.tagName + (c.className ? "." + c.className.split(" ")[0] : "");
-            tagCounts[key] = (tagCounts[key] || 0) + 1;
-          });
-
-          const dominantTag = Object.entries(tagCounts).sort(
-            (a, b) => b[1] - a[1],
-          )[0];
-
-          if (dominantTag && dominantTag[1] >= 3) {
-            children.forEach((child) => {
-              if (element && child.contains(element)) return;
-              const childRect = child.getBoundingClientRect();
-              if (inputRect && childRect.bottom > inputRect.top) return;
-              const text = child.innerText?.trim();
-              if (
-                text &&
-                text.length > 3 &&
-                text.length < 2000 &&
-                !seen.has(text)
-              ) {
-                seen.add(text);
-                texts.push(text);
-              }
-            });
-          }
-        }
-      }
-
-      if (texts.length >= 2) {
-        bestMessages = texts.slice(-MAX_CONTEXT_MESSAGES);
-        // If we found messages and this is a thread container, stop here
-        if (isThreadContainer || bestMessages.length >= MAX_CONTEXT_MESSAGES) {
-          console.log(`[Engify] Thread boundary detected at depth ${depth}`);
-          break;
-        }
-      }
-
-      container = container.parentElement;
-    }
-
-    if (bestMessages && bestMessages.length >= 2) {
-      console.log(`[Engify] Context found: ${bestMessages.length} messages`);
-      bestMessages.forEach((msg, i) =>
-        console.log(
-          `[Engify] [${i + 1}] ${msg.slice(0, 100)}${msg.length > 100 ? "..." : ""}`,
-        ),
-      );
-
-      let context = bestMessages.join("\n---\n");
-      if (context.length > MAX_CONTEXT_LENGTH) {
-        context = context.slice(-MAX_CONTEXT_LENGTH);
-        console.log(
-          `[Engify] Context truncated to ${MAX_CONTEXT_LENGTH} chars`,
-        );
-      }
-      return context;
-    }
-  } finally {
-    console.log("[Engify] No thread context found");
-    return null;
-  }
-}
-
-function createSummaryModal(summaryText) {
-  // Detect if page is in dark mode
-  const bgColor = window.getComputedStyle(document.body).backgroundColor;
-  const isDarkMode = isColorDark(bgColor);
-
-  const modal = document.createElement("div");
-  modal.id = "engify-summary-modal";
-  modal.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: ${isDarkMode ? "rgba(0, 0, 0, 0.55)" : "rgba(0, 0, 0, 0.25)"};
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2147483647;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  `;
-
-  const modalContent = document.createElement("div");
-  modalContent.style.cssText = `
-    background-color: ${isDarkMode ? "#1f1f1f" : "#ffffff"};
-    border-radius: 10px;
-    padding: 20px 20px 18px;
-    max-width: 640px;
-    max-height: 70vh;
-    width: 92%;
-    box-shadow: ${isDarkMode ? "0 12px 32px rgba(0, 0, 0, 0.5)" : "0 12px 32px rgba(0, 0, 0, 0.12)"};
-    border: 1px solid ${isDarkMode ? "rgba(255,255,255,0.08)" : "#e6e6e6"};
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  `;
-
-  const header = document.createElement("div");
-  header.style.cssText = `
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-  `;
-
-  const title = document.createElement("h3");
-  title.textContent = "Summary";
-  title.style.cssText = `
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: ${isDarkMode ? "#e8eaed" : "#202124"};
-    letter-spacing: 0;
-  `;
-
-  const closeBtn = document.createElement("button");
-  closeBtn.textContent = "✕";
-  closeBtn.style.cssText = `
-    background: none;
-    border: none;
-    font-size: 18px;
-    color: ${isDarkMode ? "#9aa0a6" : "#5f6368"};
-    cursor: pointer;
-    padding: 2px;
-    width: 28px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 6px;
-    transition: background-color 0.15s ease;
-    flex-shrink: 0;
-  `;
-  closeBtn.onmouseover = () => {
-    closeBtn.style.backgroundColor = isDarkMode
-      ? "rgba(255,255,255,0.06)"
-      : "rgba(0,0,0,0.05)";
-  };
-  closeBtn.onmouseout = () => {
-    closeBtn.style.backgroundColor = "transparent";
-    closeBtn.style.color = isDarkMode ? "#9aa0a6" : "#5f6368";
-  };
-  closeBtn.onclick = () => modal.remove();
-
-  header.appendChild(title);
-  header.appendChild(closeBtn);
-
-  const textArea = document.createElement("div");
-  textArea.textContent = summaryText;
-  textArea.style.cssText = `
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px 10px;
-    background-color: transparent;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.6;
-    color: ${isDarkMode ? "#e8eaed" : "#202124"};
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    border: none;
-  `;
-
-  // Smooth scrollbar styling
-  textArea.style.scrollBehavior = "smooth";
-
-  header.appendChild(title);
-  header.appendChild(closeBtn);
-
-  modalContent.appendChild(header);
-  modalContent.appendChild(textArea);
-  modal.appendChild(modalContent);
-
-  modal.onclick = (e) => {
-    if (e.target === modal) modal.remove();
-  };
-
-  document.body.appendChild(modal);
-}
 
 function createPopupIcon() {
   if (popupIcon) {
@@ -307,21 +22,16 @@ function createPopupIcon() {
   popupIcon.id = "ai-text-improver-icon";
   popupIcon.style.cssText = `
     position: absolute;
-    background-color: white;
-    color: #202124;
-    border: 1px solid #dadce0;
-    border-radius: 8px;
-    padding: 2px 6px;
+    border-radius: 9999px;
+    padding: 0;
+    border: 0;
+    background: var(--engify-toolbar-surface);
+    box-shadow: var(--engify-toolbar-outline);
     display: none;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        Helvetica, Arial, sans-serif;
-    font-weight: 500;
-    cursor: pointer;
+    font-family: "Engify Inter", ui-sans-serif, system-ui, sans-serif;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
     z-index: 2147483647;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     user-select: none;
     transition: opacity ${POPUP_ANIMATION_DURATION_MS}ms ease-in-out,
         transform ${POPUP_ANIMATION_DURATION_MS}ms ease-in-out;
@@ -330,20 +40,171 @@ function createPopupIcon() {
     pointer-events: none;
   `;
 
-  const iconUrl = chrome.runtime.getURL("icons/icon16.png");
   popupIcon.innerHTML = `
-    <img src="${iconUrl}" alt="Engify" style="width: 10px; height: 10px;">
-    <span class="status-text">Fix me!</span>
-    <span class="spinner" style="display: none; width: 10px; height: 10px;
-        border: 2px solid #f3f3f3; border-top: 2px solid #3498db;
-        border-radius: 50%; animation: spin 0.8s linear infinite;"></span>
+    <div class="engify-toolbar-content">
+      <button class="engify-button" type="button">
+        <span class="engify-button-background" aria-hidden="true"></span>
+        <span class="engify-button-focus-ring" aria-hidden="true"></span>
+        <span class="engify-button-content">
+          <span class="status-text">Fix me!</span>
+          <span class="spinner" aria-hidden="true" style="display: none;">
+            <svg viewBox="0 0 20 20" width="100%" height="100%" fill="currentColor">
+              <path d="M9.045 2.078q-1.04.135-1.609.33a7.982 7.982 0 1 0 10.236 9.9q.15-.49.256-1.356c.069-.568.55-.997 1.122-.997h.008c.56 0 .995.486.937 1.041q-.113 1.068-.279 1.663c-1.18 4.233-5.064 7.338-9.674 7.338C4.496 19.997 0 15.501 0 9.955 0 5.382 3.058 1.522 7.24.31Q7.868.13 9 .006a.94.94 0 0 1 1.042.933v.008c0 .574-.428 1.058-.997 1.131" />
+            </svg>
+          </span>
+        </span>
+        <span class="engify-button-overlay" aria-hidden="true"></span>
+      </button>
+    </div>
   `;
 
   const style = document.createElement("style");
   style.textContent = `
-    @keyframes spin {
+    @font-face {
+      font-family: "Engify Inter";
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url("https://fonts.gstatic.com/s/inter/v20/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuGKYMZg.ttf") format("truetype");
+    }
+    #ai-text-improver-icon,
+    #ai-text-improver-icon * { box-sizing: border-box; }
+    /* Solid toolbar with Cladd inset outlines and transparent xs buttons. */
+    #ai-text-improver-icon {
+      --engify-toolbar-surface: #2d2d2d;
+      --engify-toolbar-outline: inset 1px 1px 0 0 color-mix(in oklab, white 8%, transparent),
+        inset -1px -1px 0 0 color-mix(in oklab, white 7%, transparent);
+      --engify-button-surface: color-mix(in oklab, white 6%, var(--engify-toolbar-surface) 100%);
+      --engify-hover: color-mix(in oklab, white 5%, transparent);
+      --engify-pressed: color-mix(in oklab, white 3%, transparent);
+      --engify-primary: oklch(from #388aff 0.95 0.18 h);
+      color: oklch(0.9 0 0);
+      color-scheme: dark;
+    }
+    #ai-text-improver-icon[data-theme="light"] {
+      --engify-toolbar-surface: #f5f5f5;
+      --engify-toolbar-outline: inset 0 0 0 1px oklch(0.89 0 0),
+        inset 1.5px 1.5px 0 0 color-mix(in oklab, white 60%, transparent);
+      --engify-button-surface: color-mix(in oklab, black 4%, var(--engify-toolbar-surface) 100%);
+      --engify-hover: color-mix(in oklab, black 3%, transparent);
+      --engify-pressed: color-mix(in oklab, white 6%, transparent);
+      --engify-primary: oklch(from #388aff 0.5 0.18 h);
+      color: oklch(0.32 0 0);
+      color-scheme: light;
+    }
+    #ai-text-improver-icon .engify-button-background,
+    #ai-text-improver-icon .engify-button-overlay {
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+    }
+    #ai-text-improver-icon .engify-toolbar-content {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+    }
+    #ai-text-improver-icon .engify-button {
+      all: unset;
+      box-sizing: border-box;
+      position: relative;
+      display: inline-block;
+      height: 20px;
+      border-radius: 9999px;
+      appearance: none;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: left;
+      cursor: auto;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #ai-text-improver-icon .engify-button-background {
+      transition: background-color 200ms;
+    }
+    #ai-text-improver-icon .engify-button-content {
+      box-sizing: border-box;
+      position: relative;
+      display: flex;
+      width: 100%;
+      height: 100%;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 2px 10px;
+      white-space: nowrap;
+      transition: transform 200ms, opacity 200ms;
+    }
+    #ai-text-improver-icon .engify-button-overlay {
+      opacity: 0;
+      transition: opacity 200ms, background-color 200ms;
+    }
+    #ai-text-improver-icon .engify-button-focus-ring {
+      position: absolute;
+      z-index: 1;
+      inset: -6px;
+      border: 2px solid var(--engify-primary);
+      border-radius: inherit;
+      opacity: 0;
+      transform: scale(0.95);
+      pointer-events: none;
+      transition: transform 200ms, opacity 200ms;
+    }
+    #ai-text-improver-icon .engify-button:focus-visible > .engify-button-focus-ring {
+      opacity: 1;
+      transform: scale(1);
+    }
+    @media (hover: hover) {
+      #ai-text-improver-icon .engify-button:hover:not(:active) > .engify-button-background {
+        background: var(--engify-button-surface);
+      }
+      #ai-text-improver-icon .engify-button:hover:not(:active) > .engify-button-overlay {
+        background: var(--engify-hover);
+        opacity: 1;
+      }
+    }
+    #ai-text-improver-icon .engify-button:active > .engify-button-background {
+      background: var(--engify-button-surface);
+    }
+    #ai-text-improver-icon .engify-button:active > .engify-button-overlay {
+      background: var(--engify-pressed);
+      opacity: 1;
+    }
+    #ai-text-improver-icon .engify-button:active > .engify-button-content {
+      transform: scale(0.95);
+      opacity: 0.75;
+    }
+    #ai-text-improver-icon .spinner {
+      position: relative;
+      flex-shrink: 0;
+      width: 12px;
+      height: 12px;
+      color: var(--engify-primary);
+      pointer-events: none;
+      transition: opacity 200ms, scale 200ms;
+      opacity: 1;
+      scale: 1;
+    }
+    #ai-text-improver-icon .spinner svg {
+      display: block;
+      animation: engify-spin 1.5s infinite linear;
+    }
+    @starting-style {
+      #ai-text-improver-icon .spinner { opacity: 0; scale: 0; }
+    }
+    @keyframes engify-spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #ai-text-improver-icon,
+      #ai-text-improver-icon * {
+        transition: none !important;
+      }
+      #ai-text-improver-icon .spinner svg { animation: none; }
     }
   `;
   document.head.appendChild(style);
@@ -354,8 +215,26 @@ function createPopupIcon() {
     event.stopPropagation();
     performTextEnhancement();
   });
+  popupIcon.querySelector(".engify-button").addEventListener("click", (event) => {
+    if (event.detail === 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      performTextEnhancement();
+    }
+  });
 
   return popupIcon;
+}
+
+function setPopupLoading(icon, loading) {
+  if (!icon) {
+    return;
+  }
+  icon.querySelector(".engify-button").setAttribute("aria-busy", String(loading));
+  const spinner = icon.querySelector(".spinner");
+  if (spinner) {
+    spinner.style.display = loading ? "inline-block" : "none";
+  }
 }
 
 function updatePopupStatus(message, showSpinner = true) {
@@ -365,14 +244,10 @@ function updatePopupStatus(message, showSpinner = true) {
   }
 
   const textSpan = icon.querySelector(".status-text");
-  const spinner = icon.querySelector(".spinner");
-
   if (textSpan) {
     textSpan.textContent = message;
   }
-  if (spinner) {
-    spinner.style.display = showSpinner ? "inline-block" : "none";
-  }
+  setPopupLoading(icon, showSpinner);
 }
 
 function isColorDark(color) {
@@ -395,25 +270,35 @@ function showPopup(positionRef) {
   }
 
   const rect = positionRef.getBoundingClientRect();
+  const themeRoot = lastValidSelection.element.closest(
+    ".dark, .light, [data-theme='dark'], [data-theme='light']",
+  );
+  if (themeRoot) {
+    icon.dataset.theme =
+      themeRoot.classList.contains("dark") || themeRoot.dataset.theme === "dark"
+        ? "dark"
+        : "light";
+  } else {
+    let element = lastValidSelection.element;
+    let background = "";
+    while (element) {
+      background = window.getComputedStyle(element).backgroundColor;
+      if (background !== "transparent" && background !== "rgba(0, 0, 0, 0)") {
+        break;
+      }
+      element = element.parentElement;
+    }
+    const dark = element
+      ? isColorDark(background)
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    icon.dataset.theme = dark ? "dark" : "light";
+  }
 
   icon.style.visibility = "hidden";
   icon.style.display = "flex";
   const iconRect = icon.getBoundingClientRect();
   icon.style.visibility = "visible";
   icon.style.display = "none";
-
-  const computedStyle = window.getComputedStyle(lastValidSelection.element);
-  const backgroundColor = computedStyle.backgroundColor;
-
-  if (isColorDark(backgroundColor)) {
-    icon.style.backgroundColor = "#2d2d2d";
-    icon.style.color = "#e8eaed";
-    icon.style.border = "1px solid #555";
-  } else {
-    icon.style.backgroundColor = "white";
-    icon.style.color = "#202124";
-    icon.style.border = "1px solid #dadce0";
-  }
 
   const spaceAbove = rect.top;
   let topPosition;
@@ -431,16 +316,11 @@ function showPopup(positionRef) {
   icon.style.transform = "scale(1)";
   icon.style.pointerEvents = "auto";
 
-  const command = detectCommand(lastValidSelection.text);
-
   const textSpan = icon.querySelector(".status-text");
   if (textSpan) {
-    textSpan.textContent = command.label;
+    textSpan.textContent = "Fix me!";
   }
-  const spinner = icon.querySelector(".spinner");
-  if (spinner) {
-    spinner.style.display = "none";
-  }
+  setPopupLoading(icon, false);
 }
 
 function hidePopup() {
@@ -525,38 +405,24 @@ function replaceSelectedText(newText) {
 }
 
 async function performTextEnhancement() {
-  if (!lastValidSelection || isApiCallInProgress) {
+  if (
+    !lastValidSelection ||
+    lastValidSelection.element.readOnly ||
+    lastValidSelection.element.disabled ||
+    isApiCallInProgress
+  ) {
     return;
   }
 
+  clearTimeout(selectionCheckTimeout);
   isApiCallInProgress = true;
   const icon = createPopupIcon();
-  const textSpan = icon?.querySelector(".status-text");
-  const spinner = icon?.querySelector(".spinner");
-
-  const context = getThreadContext(lastValidSelection.element);
-  const command = detectCommand(lastValidSelection.text);
-  const isCommandMode = command.prefix !== null;
-
-  if (textSpan) {
-    textSpan.textContent = command.processingLabel;
-  }
-  if (spinner) {
-    spinner.style.display = "inline-block";
-  }
+  updatePopupStatus("Fixing");
 
   try {
-    if (command.requiresContext && !context) {
-      updatePopupStatus("No context found", false);
-      setTimeout(hidePopup, ERROR_DISPLAY_DURATION_MS);
-      return;
-    }
-
     const response = await chrome.runtime.sendMessage({
       action: "callGeminiAPI",
-      textToEnhance: isCommandMode ? "" : lastValidSelection.text,
-      mode: command.mode,
-      threadContext: context,
+      textToEnhance: lastValidSelection.text,
     });
 
     if (response === undefined) {
@@ -567,15 +433,8 @@ async function performTextEnhancement() {
     }
 
     if (response.success) {
-      if (command.mode === "summarize") {
-        // For summary, show in modal and clear the /sum text
-        createSummaryModal(response.enhancedText);
-        replaceSelectedText("");
-        hidePopup();
-      } else {
-        replaceSelectedText(response.enhancedText);
-        hidePopup();
-      }
+      replaceSelectedText(response.enhancedText);
+      hidePopup();
     } else {
       updatePopupStatus("Failed. Try again.", false);
       console.log("API Error:", response.error || "Unknown error");
@@ -587,9 +446,7 @@ async function performTextEnhancement() {
     setTimeout(hidePopup, ERROR_DISPLAY_DURATION_MS);
   } finally {
     isApiCallInProgress = false;
-    if (spinner) {
-      spinner.style.display = "none";
-    }
+    setPopupLoading(icon, false);
   }
 }
 
@@ -631,6 +488,8 @@ function checkSelection(event) {
 
       if (
         !isExcludedType &&
+        !activeElement.readOnly &&
+        !activeElement.disabled &&
         activeElement.selectionStart !== activeElement.selectionEnd
       ) {
         selectionText = activeElement.value.substring(
@@ -659,6 +518,9 @@ function checkSelection(event) {
         let editableAncestor = null;
         let temp = container;
         while (temp) {
+          if (temp.getAttribute("contenteditable") === "false") {
+            break;
+          }
           if (temp.isContentEditable) {
             editableAncestor = temp;
             break;

@@ -5,6 +5,7 @@
   "description": "Engify is a browser extension that uses AI to improve grammar, sentence structure, and simplify English.",
   "permissions": ["activeTab", "storage", "contextMenus"],
   "action": {
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

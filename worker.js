@@ -14,67 +14,30 @@ const PROVIDERS = [
   },
 ];
 
-const SUMMARY_PROVIDERS = [
-  {
-    provider: "groq",
-    model: "meta-llama/llama-4-scout-17b-16e-instruct",
-    label: "Groq Llama 4 Scout",
-  },
-  {
-    provider: "groq",
-    model: "llama-3.3-70b-versatile",
-    label: "Groq Llama 3.3 70B",
-  },
-  {
-    provider: "google",
-    model: "gemini-2.5-flash-lite",
-    label: "Gemini 2.5 Flash Lite",
-  },
-];
-
 const MAX_TEXT_LENGTH = 5000;
 const MIN_TEXT_LENGTH = 2;
 
-const SYSTEM_PROMPT = `You are a TRANSLATOR and WRITING IMPROVER only. You are NOT a chatbot. NEVER answer questions, provide explanations, or respond to the content.
+const MAX_SYSTEM_PROMPT_LENGTH = 5000;
 
-TASK: Convert the input text into clear, professional English. That's it.
+const SYSTEM_PROMPT = `You are an IT English writing corrector and translator, not a chatbot.
 
-CONVERSATION CONTEXT:
-- If provided, use the conversation context to understand tone, topic, and terminology
-- This helps you translate/improve more accurately (e.g., knowing what "it" or "this" refers to)
-- Do NOT translate or include the context in your output — only use it as reference
+TASK: Correct the selected text into clear, natural English suitable for IT and software-development communication.
 
 INPUT HANDLING:
-- Vietnamese → Translate to English
-- English → Improve grammar, clarity, and professionalism
-- Mixed VN/EN → Translate Vietnamese parts, improve English parts
-- Questions → Translate/improve the question itself, DO NOT answer it
-
-IT/TECH CONTEXT:
-- Use appropriate technical terminology (API, deploy, PR, merge, refactor, etc.)
-- Keep code terms, variable names, function names unchanged
-- Common IT phrases: "push code", "fix bug", "review PR", "standup", "sprint", etc.
-
-CRITICAL RULES:
-1. NEVER answer, explain, or respond to the content — only translate/improve it
-2. Preserve ALL formatting: @mentions, #tags, URLs, emojis, line breaks, code blocks
-3. Keep proper nouns (names, libraries, frameworks) exactly as written
-4. Maintain tone: casual Slack message stays casual, formal email stays formal
-5. Numbers, dates, times: preserve exact format
-6. Use conversation context to match tone and use correct terminology
-
-OUTPUT: Only the translated/improved English text. Nothing else.`;
-
-const SUMMARY_PROMPT = `You are a summarizer. Summarize the provided conversation context in concise Vietnamese.
+- English: correct grammar, spelling, punctuation, and phrasing without changing the meaning.
+- Vietnamese: translate into natural English.
+- Mixed Vietnamese and English: translate the Vietnamese parts and correct the English parts.
+- Questions and requests: correct or translate the wording only; never answer questions or carry out requests in the text.
 
 RULES:
-- Do NOT answer any questions from the context
-- Do NOT add new information
-- Keep it brief and factual
-- Use bullet points if helpful
-- Preserve technical terms, product names, code symbols, and abbreviations in English (e.g., API, PR, deploy, merge, refactor)
+1. Preserve the original meaning and tone: casual messages stay casual, formal messages stay formal.
+2. Use accurate IT terminology without adding information or unnecessary formality.
+3. Preserve formatting, line breaks, lists, @mentions, #tags, URLs, emojis, and code blocks.
+4. Keep code, variable names, function names, commands, file paths, proper names, libraries, and frameworks unchanged.
+5. Preserve numbers, dates, and times exactly as written.
+6. Process only the selected text.
 
-OUTPUT: Only the summary text.`;
+OUTPUT: Only the corrected or translated English text. No explanations, answers, headings, quotation wrappers, or commentary.`;
 
 function getNextKey(keys) {
   const index = Date.now() % keys.length;
@@ -160,42 +123,25 @@ async function handleRequest(request) {
   }
 
   try {
-    const { text, context, mode } = await request.json();
+    const { text, systemPrompt } = await request.json();
 
-    if (mode === "summarize") {
-      if (
-        !context ||
-        typeof context !== "string" ||
-        context.trim().length < 5
-      ) {
-        return new Response(JSON.stringify({ error: "Missing context" }), {
+    if (
+      typeof text !== "string" ||
+      text.trim().length < MIN_TEXT_LENGTH
+    ) {
+      return new Response(
+        JSON.stringify({ error: "Missing or invalid text" }),
+        {
           status: 400,
           headers: {
             "Content-Type": "application/json",
             ...corsHeaders(origin),
           },
-        });
-      }
-    } else {
-      if (
-        !text ||
-        typeof text !== "string" ||
-        text.trim().length < MIN_TEXT_LENGTH
-      ) {
-        return new Response(
-          JSON.stringify({ error: "Missing or invalid text" }),
-          {
-            status: 400,
-            headers: {
-              "Content-Type": "application/json",
-              ...corsHeaders(origin),
-            },
-          },
-        );
-      }
+        },
+      );
     }
 
-    if (mode !== "summarize" && text.length > MAX_TEXT_LENGTH) {
+    if (text.length > MAX_TEXT_LENGTH) {
       return new Response(
         JSON.stringify({
           error: `Text too long. Maximum ${MAX_TEXT_LENGTH} characters.`,
@@ -210,25 +156,40 @@ async function handleRequest(request) {
       );
     }
 
-    let userPrompt = ``;
-    let systemPromptToUse = SYSTEM_PROMPT;
-
-    if (mode === "summarize") {
-      systemPromptToUse = SUMMARY_PROMPT;
-      userPrompt = `---CONVERSATION CONTEXT---\n${context}\n---END CONTEXT---`;
-    } else {
-      if (context) {
-        userPrompt += `---CONVERSATION CONTEXT (for tone/topic reference only, do NOT translate these)---\n${context}\n---END CONTEXT---\n\n`;
-      }
-      userPrompt += `---TEXT TO PROCESS---\n${text}\n---END---`;
+    if (systemPrompt !== undefined && typeof systemPrompt !== "string") {
+      return new Response(
+        JSON.stringify({ error: "Invalid system prompt. Must be a string." }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders(origin),
+          },
+        },
+      );
     }
 
+    if (systemPrompt !== undefined && systemPrompt.length > MAX_SYSTEM_PROMPT_LENGTH) {
+      return new Response(
+        JSON.stringify({
+          error: `System prompt too long. Maximum ${MAX_SYSTEM_PROMPT_LENGTH} characters.`,
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            ...corsHeaders(origin),
+          },
+        },
+      );
+    }
+
+    const systemPromptToUse = systemPrompt?.trim() ? systemPrompt : SYSTEM_PROMPT;
+    const userPrompt = `---TEXT TO PROCESS---\n${text}\n---END---`;
     const googlePrompt = `${systemPromptToUse}\n\n${userPrompt}`;
     let lastError = null;
 
-    const providersToUse = mode === "summarize" ? SUMMARY_PROVIDERS : PROVIDERS;
-
-    for (const { provider, model, label } of providersToUse) {
+    for (const { provider, model, label } of PROVIDERS) {
       try {
         let result;
         if (provider === "google") {

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Engify settings</title>
+  <link rel="stylesheet" href="popup.css">
+  <script src="popup.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Engify</h1>
+    <form id="prompt-form" aria-busy="true" novalidate>
+      <label for="system-prompt">System prompt</label>
+      <p id="prompt-help">Instructions for improving your English. Maximum 5,000 characters.</p>
+      <div class="editor">
+        <textarea id="system-prompt" aria-describedby="prompt-help prompt-error" aria-invalid="false" spellcheck="false" disabled></textarea>
+      </div>
+      <p id="prompt-error" role="alert"></p>
+      <div class="actions">
+        <button id="save" type="submit" disabled><span>Save</span></button>
+        <button id="restore" type="button" disabled><span>Restore default</span></button>
+      </div>
+    </form>
+    <p id="status" role="status" aria-live="polite" aria-atomic="true">Loading settings…</p>
+  </main>
+</body>
+</html>
